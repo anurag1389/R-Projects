@@ -1,0 +1,249 @@
+---
+title: "ACLED African Conflicts"
+author: "Anurag Jain"
+date: "March 31, 2018"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+<!-- 
+1.1 Provide an introduction that explains the problem statement you are addressing. Why should I be interested in this? 
+1.2 Provide a short explanation of how you plan to address this problem statement (the data used and the methodology employed) 
+1.3 Discuss your current proposed approach/analytic technique you think will address (fully or partially) this problem. 
+1.4 Explain how your analysis will help the consumer of your analysis.
+-->
+There has been conflicts happening around the world within groups which can range from militant activity, conflicts between groups, conflicts of civilians with government bodies etc. This project aims at exploring such conflicts happening in different countries of Africa for past 20 years and clusteing to find trends.
+
+With this dataset, it is possible to perform Exploratory data analysis and clustering to see the type of conflicts affecting different region and assessing the political situation of a particular region. 
+
+The data set I have selected for my project is "ACLED African Conflicts data for a duration of 1997-2017". The dataset is not tidy and needs to be cleaned to be used for analysis. There are many columns which have joined data and need to be separated to different columns. There are many cases of missing and NA values which needs to be addressed.
+
+
+## Packages Required
+<!--
+2.1 All packages used are loaded upfront so the reader knows which are required to replicate the analysis. 
+2.2 Messages and warnings resulting from loading the package are suppressed. 
+2.3 Explanation is provided regarding the purpose of each package (there are over 10,000 packages, don't assume that I know why you loaded each package).
+-->
+The packages required for this project are mentioned below:
+
+```{r packages, warning=FALSE, error=FALSE, message=FALSE}
+library(dplyr)
+library(xlsx)
+library(leaflet)
+```
+
+The functionalities of each package is mentioned below:
+
+dplyr - Used for data manipulation of the data set 
+
+xlsx - Used to import/export data from/to xlsx file format
+
+leaflet -Used to make Create Interactive Web Maps
+
+## Data Preparation
+<!--
+3.1 Original source where the data was obtained is cited and, if possible, hyperlinked. 
+3.2 Source data is thoroughly explained (i.e. what was the original purpose of the data, when was it collected, how many variables did the original have, explain any peculiarities of the source data such as how missing values are recorded, or how data was imputed, etc.). 
+ 
+-->
+
+The source of this data is from [Kaggle - ACLED African Conflicts, 1997-2017](https://www.kaggle.com/jboysen/african-conflicts).
+
+This data is originally collected under ACLED project which is an acronym for 'Armed Conflict Location and Event Data'. This project is directed by Prof. Clionadh Raleigh (University of Sussex) and operated by Senior Research Manager Andrea Carboni (University of Sussex) for Africa and Hillary Tanoff for South and South-East Asia. The aim of this project is to collate data on Political Violence in developing countries with focus on Africa. This dataset was first introduced in 2010 by Raleigh and co-authors in 2010 paper in the [Journal of Peace Research](https://en.wikipedia.org/wiki/Journal_of_Peace_Research). The ACLED data is used by several researchers in their research on civil wars and political violence. This dataset has also been referenced by news media agencies like The New York Times, The Guardian, BBC etc. to study recent conflict trends.
+
+After examining the data, it was observed that missing values are recorded as `'Blanks'` and with `NA` in a few columns. To bring consistency, we will replace Blanks with NA during reading the data. The date format is in "DD/MM/YYYY" format.
+
+<!--
+3.3 Data importing and cleaning steps are explained in the text (tell me why you are doing the data cleaning activities that you perform) and follow a logical process.
+-->
+Data is imported using the read.csv() function. It takes the String values as Factors so we use the argument stringsAsFactors = FALSE to consider it as strings. We convert blanks to NA for missing data.
+
+```{r readcsv, echo=TRUE}
+df <- read.csv("african_conflicts.csv", stringsAsFactors = FALSE, na.strings = "")
+```
+
+This dataset contains total 28 columns before making any changes.
+
+```{r names, echo=TRUE}
+names(df)
+```
+
+Out of these columns, ACTOR1_ID, ACTOR2_ID and ACTOR_DYAD_ID, EVENT_ID_CNTY, EVENT_ID_NO_CNTY are surrogate columns. So we will remove these columns. Most of the values in ALLY_ACTOR_1 and ALLY_ACTOR_2 are missing, so we remove these columns. GEO_PRECISION, GWNO and TIME_PRECISION are not required for our analysis.
+After removing these columns, we are left with 18 columns.
+
+```{r remove_columns, echo=TRUE}
+df1 <- df[-c(2, 4, 5, 9, 10, 13, 14, 17, 18, 27)]
+```
+
+The table below gives details about these columns:
+
+  Variable    | Description |
+--------------------- | -------------------------------------------|
+ACTOR1 | Name of first actor|
+ACTOR2  | Name of second actor|
+ADMIN1 | The largest sub-national administrative region in which the event took place|
+ADMIN2 | The second-largest sub-national administrative region in which the event took place|
+ADMIN3 | The third-largest sub-national administrative region in which the event took place|
+COUNTRY | Country of conflict|
+EVENT_DATE | Date of conflict, DD/MM/YYYY|
+FATALITIES | Integer value of fatalities that occurred, as reported by source|
+ INTER1 | A numeric code indicating the type of ACTOR1|
+ INTER2 | A numeric code indicating the type of ACTOR2|
+ INTERACTION | A numeric code indicating the interaction between types of ACTOR1 and ACTOR2|
+LATITUDE | The latitude of the location|
+LOCATION | The location where event occurred|
+LONGITUDE | The longitude of the location|
+NOTES | Additional notes|
+SOURCE | Source of conflict information|
+YEAR      |  Year event occurred|
+
+```{r str, eval=FALSE, echo=FALSE}
+str(df1)
+```
+
+
+
+
+<!--
+Removing blank cells
+-->
+
+Looking at columns ACTOR2, ADMIN2, ADMIN3, LOCATION, NOTES, SOURCE we see that they have some missing data.
+```{r Miss_check, echo=TRUE}
+apply(df1, 2, function(x) any(is.na(x)))
+```
+For Column ACTOR2, NA tells us that there was no second actor. So we can replace it with string "NONE"
+
+```{r blanks, echo=TRUE}
+df1$ACTOR2[is.na(df1$ACTOR2)] <- "NONE"
+head(df1$ACTOR2)
+```
+Now for columns, INTER1, INTER2 and INTERACTION numerical subsitutes for categories are provided. We will replace these with the actual values from the codebook.
+
+Preview of Column INTER1
+```{r replace_categorical, echo=TRUE}
+
+df1$INTER1 <- as.character(df1$INTER1)
+lut1 <- c("1" = "Government or mutinous force", "2" = "Rebel force", "3" = "Political militia", "4" = "Ethnic militia", "5" = "Rioters", "6" = "Protesters", "7" = "Civilians", "8" = "Outside/external force")
+df1$INTER1 <- lut1[df1$INTER1]
+head(df1$INTER1)
+```
+
+Preview of Column INTER2
+
+```{r replace_categorical_1, echo=TRUE}
+df1$INTER2 <- as.character(df1$INTER2)
+lut2 <- c("0" = "NONE", "1" = "Government or mutinous force", "2" = "Rebel force", "3" = "Political militia", "4" = "Ethnic militia", "5" = "Rioters", "6" = "Protesters", "7" = "Civilians", "8" = "Outside/external force")
+df1$INTER2 <- lut2[df1$INTER2]
+head(df1$INTER2)
+```
+
+
+Preview of Column INTERACTION
+
+```{r replace_categorical_2, echo=TRUE}
+#head(df1$INTERACTION)
+df1$INTERACTION<-as.character(df1$INTERACTION)
+#head(df1$INTERACTION)
+lut3<-c("10" = "SOLE MILITARY ACTION", "11" = "MILITARY VERSUS MILITARY", "12" = "MILITARY VERSUS REBELS", "13" = "MILITARY VERSUS POLITICAL MILITIA", "14" = "MILITARY VERSUS COMMUNAL MILITIA", "15" = "MILITARY VERSUS RIOTERS", "16" = "MILITARY VERSUS PROTESTERS", "17" = "MILITARY VERSUS CIVILIANS", "18" = "MILITARY VERSUS OTHER", "20" = "SOLE REBEL ACTION ", "22" = "REBELS VERSUS REBELS", "23" = "REBELS VERSUS POLITICAL MILIITA", "24" = "REBELS VERSUS COMMUNAL MILITIA", "25" = "REBELS VERSUS RIOTERS", "26" = "REBELS VERSUS PROTESTERS", "27" = "REBELS VERSUS CIVILIANS", "28" = "REBELS VERSUS OTHERS", "30" = "SOLE POLITICAL MILITIA ACTION","33" = "POLITICAL MILITIA VERSUS POLITICAL MILITIA", "34" = "POLITICAL MILITIA VERSUS COMMUNAL MILITIA", "35" = "POLITICAL MILITIA VERSUS RIOTERS", "36" = "POLITICAL MILITIA VERSUS PROTESTERS", "37" = "POLITICAL MILITIA VERSUS CIVILIANS", "38" = "POLITICAL MILITIA VERSUS OTHERS", "40" = "SOLE COMMUNAL MILITIA ACTION", "44" = "COMMUNAL MILITIA VERSUS COMMUNAL MILITIA", "45" = "COMMUNAL MILITIA VERSUS RIOTERS", "46" = "COMMUNAL MILITIA VERSUS PROTESTERS", "47" = "COMMUNAL MILITIA VERSUS CIVILIANS", "48" = "COMMUNAL MILITIA VERSUS OTHER","50" = "SOLE RIOTER ACTION", "55" = "RIOTERS VERSUS RIOTERS", "56" = "RIOTERS VERSUS PROTESTERS", "57" = "RIOTERS VERSUS CIVILIANS", "58" = "RIOTERS VERSUS OTHERS", "60" = "SOLE PROTESTER ACTION", "66" = "PROTESTERS VERSUS PROTESTERS", "67" = "PROTESTERS VERSUS CIVILIANS", "68" = "PROTESTERS VERSUS OTHER", "70" = "SOLE CIVILIANS", "77" = "CIVILIANS VERSUS CIVILIANS", "78" = "OTHER ACTOR VERSUS CIVILIANS", "80" = "SOLE OTHER ACTION", "88" = "OTHERS VERSUS OTHERS")
+df1$INTERACTION <- lut3[df1$INTERACTION]
+head(df1$INTERACTION)
+```
+
+<br />
+
+<!--
+3.4 Once your data is clean, show what the final data set looks like. However, do not print off a data frame with 200+ rows; show me the data in the most condensed form possible. 
+3.5 Provide summary information about the variables of concern in your cleaned data set. Do not just print off a bunch of code chunks with str(), summary(), etc. Rather, provide me with a consolidated explanation, either with a table that provides summary info for each variable or a nicely written summary paragraph with inline code.
+
+-->
+
+Preview of data after cleaning is given below:
+
+
+```{r clean_data, echo=TRUE}
+
+head(df1)
+```
+
+Looking at the summary of data using mmary() function, we see below facts:
+
+```{r summary, echo=TRUE, eval=FALSE}
+
+summary(df1)
+```
+
+
+  Variable    | Min           |Max          |Mean     |
+------------- | ------------- |-------------|---------|
+Fatalities    | 0        |  25000           |    4.42     |
+Year        | 1997        |   2017          |     -    |
+
+From above summary of Fatalities, it is observed that minimum afatalities in conflicts 0 and maximum value is 25000 with a mean of 4.42
+
+
+```{r hist, echo=TRUE}
+hist(df1$YEAR, xlab = "YEAR", main = "Histogram of conflicts per year ")
+```
+Looking at the histogram above, it is observed that highest number of cnflicts happened in the year 2016. With this information, we can further explore the areas which were affected by this conflict and the time of the year most conflicts happened.
+
+```{r hist_1, echo=TRUE}
+boxplot(df1$FATALITIES~df$YEAR)
+```
+
+Looking at the boxplot above, it can be seen that there are a few outliers inthe dataset with highest being in 1997.
+
+<br />
+
+## Proposed Exploratory Data Analysis
+<!--
+4.1 Discuss how you plan to uncover new information in the data that is not self-evident. What are different ways you could look at this data to answer the questions you want to answer? Do you plan to slice and dice the data in different ways, create new variables, or join separate data frames to create new summary information? How could you summarize your data to answer key questions? 
+4.2 What types of plots and tables will help you to illustrate the findings to your questions? 
+4.3 What do you not know how to do right now that you need to learn to answer your questions? 
+4.4 Do you plan on incorporating any machine learning techniques (i.e. linear regression, discriminant analysis, cluster analysis) to answer your questions? 
+-->
+
+With this dataset, we can perform EDA using leaflets package to map the critical areas where most conflicts happen. We can further drill down to check details for areas of a country where most conflicts take place. 
+We can see the trends to find the areas where conflicts happen at a particular time of the year. The EVENT_DATE column can be separated to Day, Month and Year to find trends on a monthly or seasonal basis. We can summarize the data to find new metrics like total fatalaties per year, total fatalaties per country, total fatalities per region in a country, frequency of conflicts per country. etc. We can plot bar plots to visialize this data and use boxplot to find out outliers. 
+
+
+We can create summary information as below to get insights about the top metrics. 
+
+Below are tables showing top 5 years when the fatalities were the highest and top 10 countries with highest fatalities.
+
+
+```{r sum3}
+df1%>%group_by(YEAR)%>%summarise(sum(FATALITIES))%>%arrange(desc(`sum(FATALITIES)`))%>%head(n=5)
+
+```
+
+From the table above, we can see that year 1999 had the highest fatalities due to conflicts.
+
+```{r sum4, echo=TRUE}
+
+df1%>%group_by(COUNTRY)%>%summarise(sum(FATALITIES))%>%arrange(desc(`sum(FATALITIES)`))%>%head(n=10)
+```
+Here, we can see that Angola has the highest fatalities due to conflicts.
+
+<!--
+
+## Formatting & Other Requirements
+
+7.1 All code is visible, proper coding style is followed, and code is well commented (see section regarding syle). 
+7.2 Coding is systematic - complicated problem broken down into sub-problems that are individually much simpler. Code is efficient, correct, and minimal. Code uses appropriate data structure (list, data frame, vector/matrix/array). Code checks for common errors. 
+7.3 Achievement, mastery, cleverness, creativity: Tools and techniques from the course are applied very competently and, perhaps,somewhat creatively. Perhaps student has gone beyond what was expected and required, e.g., extraordinary effort, additional tools not addressed by this course, unusually sophisticated application of tools from course. 
+7.4 .Rmd fully executes without any errors and HTML produced matches the HTML report submitted by student.
+-->
+
+A cluster analysis can be performed on this data to get new insights. Text analysis on NOTES column can be performed to understand the most popular words.
+
+<br />
+<br />
+<br />
+
+
